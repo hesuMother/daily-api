@@ -1,0 +1,602 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+
+  @@map("user_role")
+}
+
+enum ReportTargetType {
+  OUTFIT
+  USER
+  PRODUCT
+  PRODUCT_OFFER
+  PRODUCT_HISTORY
+  PRODUCT_BOOKMARK
+
+  @@map("report_target_type")
+}
+
+enum AuditAction {
+  // Historical audit records retain their original meaning.
+  VERIFY
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  RESOLVE
+  LOGIN
+  LOGIN_FAILED
+  PASSWORD_CHANGE
+  ROLE_CHANGE
+
+  @@map("audit_action")
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("moderation_status")
+}
+
+enum OutfitItemType {
+  TOP
+  BOTTOM
+  OUTER
+  SHOES
+  BAG
+  ACCESSORY
+  ETC
+
+  @@map("outfit_item_type")
+}
+
+enum ContactStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+
+  @@map("contact_status")
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  REJECTED
+
+  @@map("report_status")
+}
+
+// ─────────────────────────────────────────────
+// Users
+// ─────────────────────────────────────────────
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  username        String   @unique
+  password        String   @db.VarChar(256)
+  email           String   @unique
+  role            UserRole @default(USER)
+  profileImageUrl String?  @map("profile_image_url")
+  isVerified      Boolean  @default(false) @map("is_verified")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  productHistories ProductHistory[]
+  productBookmarks ProductBookmark[]
+  outfits          Outfit[]          @relation("OutfitAuthor")
+  outfitStarsGiven OutfitStar[]      @relation("Evaluator")
+  outfitBookmarks  OutfitBookmark[]
+  outfitReviews    RejectedOutfit[]  @relation("OutfitReviewer")
+  contacts         Contact[]
+  reportsFiled     Report[]          @relation("Reporter")
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// Unified product catalog
+// Product: 상품 자체
+// ProductOffer: 특정 판매처의 판매 정보
+// ProductOfferVariant: 판매처별 옵션 가격·재고 정보
+// ─────────────────────────────────────────────
+
+model Brand {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String   @unique
+  logoUrl     String?  @map("logo_url")
+  description String?
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  products Product[]
+
+  @@index([name])
+  @@index([isDeleted])
+  @@map("brands")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  parentId  String?  @map("parent_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent          Category?         @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children        Category[]        @relation("CategoryHierarchy")
+  products        Product[]
+  legacyBookmarks ProductBookmark[]
+
+  @@index([parentId])
+  @@index([name])
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  brandId     String?  @map("brand_id") @db.Uuid
+  categoryId  String?  @map("category_id") @db.Uuid
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  brand       Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  category    Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  images      ProductImage[]
+  offers      ProductOffer[]
+  variants    ProductVariant[]
+  histories   ProductHistory[]
+  bookmarks   ProductBookmark[]
+  outfitItems OutfitItem[]
+
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([isDeleted])
+  @@index([name])
+  @@map("products")
+}
+
+model Seller {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  slug       String   @unique
+  baseUrl    String?  @map("base_url")
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  offers ProductOffer[]
+
+  @@index([name])
+  @@map("sellers")
+}
+
+model ProductOffer {
+  id                String   @id @default(uuid()) @db.Uuid
+  productId         String   @map("product_id") @db.Uuid
+  sellerId          String   @map("seller_id") @db.Uuid
+  externalProductId String?  @map("external_product_id")
+  // 옵션이 없으면 실제 가격, 옵션이 있으면 대표가/최저가로 사용합니다.
+  price             Int
+  currency          String   @default("KRW") @db.VarChar(3)
+  purchaseUrl       String?  @map("purchase_url")
+  // 판매처에서 상품 전체가 판매 불가한 경우에만 true입니다.
+  isSoldOut         Boolean  @default(false) @map("is_sold_out")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  seller         Seller                @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  offerVariants  ProductOfferVariant[]
+  histories      ProductHistory[]
+  priceHistories ProductPriceHistory[]
+  outfitItems    OutfitItem[]
+
+  // PostgreSQL에서는 externalProductId가 NULL인 행이 여러 개 존재할 수 있습니다.
+  // 이 제약은 외부 판매처 상품의 중복 수집 방지용입니다.
+  @@unique([sellerId, externalProductId])
+  @@index([productId])
+  @@index([sellerId])
+  @@index([price])
+  @@index([isSoldOut])
+  @@map("product_offers")
+}
+
+// 사용자 조회 기록(ProductHistory)과 별개인 판매처별 가격 이력입니다.
+model ProductPriceHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  offerId   String   @map("offer_id") @db.Uuid
+  price     Int
+  currency  String   @default("KRW") @db.VarChar(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  offer ProductOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, createdAt])
+  @@map("product_price_histories")
+}
+
+model ProductVariant {
+  id          String   @id @default(uuid()) @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  sku         String?  @unique
+  color       String?
+  size        String?
+  // Preserved legacy total; new stock is tracked per offer variant.
+  legacyStock Int      @default(0) @map("stock") @ignore
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product       Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  offerVariants ProductOfferVariant[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model ProductOfferVariant {
+  id                String   @id @default(uuid()) @db.Uuid
+  offerId           String   @map("offer_id") @db.Uuid
+  variantId         String   @map("variant_id") @db.Uuid
+  externalVariantId String?  @map("external_variant_id")
+  price             Int
+  // 외부 판매처가 정확한 재고 수를 제공하지 않으면 null로 둡니다.
+  stock             Int?
+  isSoldOut         Boolean  @default(false) @map("is_sold_out")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  offer   ProductOffer   @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  // offer와 variant가 같은 Product에 속하는지는 서비스 계층에서 검증해야 합니다.
+  @@unique([offerId, variantId])
+  @@unique([offerId, externalVariantId])
+  @@index([variantId])
+  @@index([price])
+  @@map("product_offer_variants")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  imageUrl  String   @map("image_url")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+// 조회 기록은 특정 판매처를 통해 본 경우까지 보존할 수 있습니다.
+model ProductHistory {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  productId         String?  @map("product_id") @db.Uuid
+  legacyProductLink String?  @map("product_link")
+  isDeleted         Boolean  @default(false) @map("is_deleted")
+  offerId           String?  @map("offer_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product?      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  offer   ProductOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  // offer가 product에 속하는지는 서비스 계층에서 검증해야 합니다.
+  @@index([userId, createdAt])
+  @@index([productId])
+  @@index([offerId])
+  @@map("product_histories")
+}
+
+model ProductBookmark {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  productId         String?  @map("product_id") @db.Uuid
+  legacyProductName String?  @map("legacy_product_name")
+  legacyProductLink String?  @map("legacy_product_link")
+  legacyCategoryId  String?  @map("category_id") @db.Uuid
+  isDeleted         Boolean  @default(false) @map("is_deleted")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product        Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  legacyCategory Category? @relation(fields: [legacyCategoryId], references: [id], onDelete: SetNull, map: "product_bookmarks_category_id_fkey")
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@index([legacyCategoryId], map: "product_bookmarks_category_id_idx")
+  @@index([userId, isDeleted])
+  @@map("product_bookmarks")
+}
+
+// ─────────────────────────────────────────────
+// Outfits
+// ─────────────────────────────────────────────
+
+model OutfitCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outfits Outfit[]
+
+  @@index([name])
+  @@map("outfit_categories")
+}
+
+model Outfit {
+  id               String           @id @default(uuid()) @db.Uuid
+  // 기존 작성자 없는 코디를 보존하기 위한 nullable. 신규 API 등록은 작성자 필수.
+  authorId         String?          @map("author_id") @db.Uuid
+  name             String?          @map("outfit_name")
+  description      String?          @map("outfit_description")
+  height           Int?
+  weight           Int?
+  imageUrl         String?          @map("image_url")
+  status           ModerationStatus @default(PENDING)
+  // Preserved for migration audits; new API uses items and status only.
+  legacyShirt      String?          @map("shirt") @ignore
+  legacyShirtLink  String?          @map("shirt_link") @ignore
+  legacyPants      String?          @map("pants") @ignore
+  legacyPantsLink  String?          @map("pants_link") @ignore
+  legacyShoes      String?          @map("shoes") @ignore
+  legacyShoesLink  String?          @map("shoes_link") @ignore
+  legacyExt        String?          @map("ext") @ignore
+  legacyExtLink    String?          @map("ext_link") @ignore
+  legacyIsVerified Boolean          @default(false) @map("is_verified") @ignore
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  author       User?            @relation("OutfitAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  items        OutfitItem[]
+  categories   OutfitCategory[]
+  stars        OutfitStar[]
+  bookmarks    OutfitBookmark[]
+  rejectionLog RejectedOutfit[]
+
+  @@index([authorId])
+  @@index([status, createdAt])
+  @@map("outfits")
+}
+
+model OutfitItem {
+  id        String         @id @default(uuid()) @db.Uuid
+  outfitId  String         @map("outfit_id") @db.Uuid
+  type      OutfitItemType
+  name      String
+  link      String?
+  productId String?        @map("product_id") @db.Uuid
+  offerId   String?        @map("offer_id") @db.Uuid
+  sortOrder Int            @default(0) @map("sort_order")
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outfit  Outfit        @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  product Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  offer   ProductOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  // productId와 offerId를 함께 쓰면 같은 상품인지 서비스 계층에서 검증해야 합니다.
+  @@index([outfitId, sortOrder])
+  @@index([productId])
+  @@index([offerId])
+  @@map("outfit_items")
+}
+
+// Outfit.status가 REJECTED일 때 사유와 검수자를 기록하는 이력 테이블입니다.
+model RejectedOutfit {
+  id         String   @id @default(uuid()) @db.Uuid
+  outfitId   String   @map("outfit_id") @db.Uuid
+  reviewerId String?  @map("reviewer_id") @db.Uuid
+  reason     String
+  reviewedAt DateTime @default(now()) @map("reviewed_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outfit   Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  reviewer User?  @relation("OutfitReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([outfitId, reviewedAt])
+  @@index([reviewerId])
+  @@map("rejected_outfits")
+}
+
+model OutfitStar {
+  id          String   @id @default(uuid()) @db.Uuid
+  stars       Int
+  outfitId    String   @map("outfit_id") @db.Uuid
+  evaluatorId String   @map("evaluator_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  outfit    Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  evaluator User   @relation("Evaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+
+  // stars 범위(예: 1~5)는 DTO와 서비스 계층에서 검증합니다.
+  @@unique([outfitId, evaluatorId])
+  @@index([evaluatorId])
+  @@map("outfit_stars")
+}
+
+model OutfitBookmark {
+  id             String   @id @default(uuid()) @db.Uuid
+  outfitId       String   @map("outfit_id") @db.Uuid
+  bookmarkUserId String   @map("bookmark_user_id") @db.Uuid
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  outfit Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [bookmarkUserId], references: [id], onDelete: Cascade)
+
+  @@unique([outfitId, bookmarkUserId])
+  @@index([bookmarkUserId, isDeleted])
+  @@map("outfit_bookmarks")
+}
+
+// ─────────────────────────────────────────────
+// Contacts
+// ─────────────────────────────────────────────
+
+model ContactCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  contacts Contact[]
+
+  @@map("contact_categories")
+}
+
+model Contact {
+  id                String            @id @default(uuid()) @db.Uuid
+  reason            String
+  description       String?
+  feature           String?
+  targetType        ReportTargetType? @map("target_type")
+  targetId          String?           @map("target_id") @db.Uuid
+  readAt            DateTime?         @map("read_at") @db.Timestamptz(6)
+  contactCategoryId String            @map("contact_category_id") @db.Uuid
+  contactUserId     String            @map("contact_user_id") @db.Uuid
+  status            ContactStatus     @default(PENDING)
+  completedAt       DateTime?         @map("completed_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category ContactCategory @relation(fields: [contactCategoryId], references: [id], onDelete: Restrict)
+  user     User            @relation(fields: [contactUserId], references: [id], onDelete: Cascade)
+
+  @@index([contactUserId])
+  @@index([contactCategoryId])
+  @@index([status, createdAt])
+  @@index([readAt, createdAt])
+  @@map("contacts")
+}
+
+// ─────────────────────────────────────────────
+// Reports
+// ─────────────────────────────────────────────
+
+model ReportCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reports Report[]
+
+  @@map("report_categories")
+}
+
+model Report {
+  id               String           @id @default(uuid()) @db.Uuid
+  reason           String
+  description      String?
+  adminNote        String?          @map("admin_note")
+  // 폴리모픽 대상이므로 DB FK 대신 서비스 계층에서 존재 여부를 검증합니다.
+  targetType       ReportTargetType @map("target_type")
+  targetId         String           @map("target_id") @db.Uuid
+  reportCategoryId String           @map("report_category_id") @db.Uuid
+  reporterId       String           @map("reporter_id") @db.Uuid
+  status           ReportStatus     @default(PENDING)
+  completedAt      DateTime?        @map("completed_at") @db.Timestamptz(6)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category ReportCategory @relation(fields: [reportCategoryId], references: [id], onDelete: Restrict)
+  reporter User           @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([targetType, targetId])
+  @@index([reporterId])
+  @@index([reportCategoryId])
+  @@index([status, createdAt])
+  @@map("reports")
+}
+
+enum DiscordNotificationKind {
+  REPORT
+  CONTACT
+
+  @@map("discord_notification_kind")
+}
+
+enum DiscordNotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+
+  @@map("discord_notification_status")
+}
+
+model DiscordNotification {
+  id          String                    @id @default(uuid()) @db.Uuid
+  kind        DiscordNotificationKind
+  targetId    String                    @map("target_id") @db.Uuid
+  status      DiscordNotificationStatus @default(PENDING)
+  attempts    Int                       @default(0)
+  availableAt DateTime                  @default(now()) @map("available_at") @db.Timestamptz(6)
+  lockedUntil DateTime?                 @map("locked_until") @db.Timestamptz(6)
+  lockToken   String?                   @map("lock_token") @db.Uuid
+  deliveredAt DateTime?                 @map("delivered_at") @db.Timestamptz(6)
+  lastError   String?                   @map("last_error")
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([kind, targetId])
+  @@index([status, availableAt])
+  @@map("discord_notifications")
+}
+
+// ─────────────────────────────────────────────
+// Audit log
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  // null이면 배치나 자동화 같은 시스템 작업입니다.
+  actorId    String?     @map("actor_id") @db.Uuid
+  action     AuditAction
+  // 감사 대상은 계속 늘어날 수 있으므로 자유 문자열로 유지합니다.
+  targetType String?     @map("target_type")
+  targetId   String?     @map("target_id") @db.Uuid
+  metadata   Json?
+  ipAddress  String?     @map("ip_address")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
