@@ -3,7 +3,7 @@ import { ProductSyncService } from './product-sync.service';
 import { ProductSyncRepository } from '../repository/product-sync.repository';
 
 describe('ProductSyncService batches', () => {
-  const source = { slug: 'coupang', name: 'Coupang' };
+  const source = { slug: 'test-shop', name: 'Test Shop' };
   const product = { externalProductId: '42', name: 'Shirt', price: 1000 };
   const make = () => {
     const sync = jest

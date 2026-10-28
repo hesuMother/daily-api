@@ -13,7 +13,7 @@ describe('Product sync PostgreSQL integration', () => {
   let prisma: PrismaService;
   let service: ProductSyncService;
   let schemaCreated = false;
-  const source = { slug: 'coupang', name: 'Coupang' };
+  const source = { slug: 'test-shop', name: 'Test Shop' };
   const product = {
     externalProductId: '42',
     name: 'Same product name',
@@ -99,6 +99,113 @@ describe('Product sync PostgreSQL integration', () => {
     expect(offers[0].priceHistories).toHaveLength(1);
     expect(offers[0].product.images).toHaveLength(1);
     expect(await prisma.product.count()).toBe(4);
+  });
+
+  it('stores URL-only crawler offers once, preserves unknown prices and later attaches an external ID', async () => {
+    const input = {
+      name: 'Crawler item',
+      productUrl: 'https://shop.test/products/shirt',
+      price: null,
+      isSoldOut: null,
+      brand: 'Daily',
+      modelNumber: 'MODEL-1',
+      sku: 'SKU-1',
+      fetchedAt: new Date(),
+    };
+    await Promise.all([
+      service.sync(input, source),
+      service.sync(input, source),
+    ]);
+    const rows = await prisma.productOffer.findMany({
+      where: { productUrl: input.productUrl },
+      include: { priceHistories: true },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      price: null,
+      isSoldOut: null,
+      sourceBrand: 'Daily',
+      modelNumber: 'MODEL-1',
+      sku: 'SKU-1',
+      externalProductId: null,
+    });
+    expect(rows[0].priceHistories).toHaveLength(0);
+    const observed = new Date(input.fetchedAt.getTime() + 1000);
+    await service.sync(
+      {
+        ...input,
+        externalProductId: 'crawler-1',
+        price: 12000,
+        originalPrice: 15000,
+        fetchedAt: observed,
+      },
+      source,
+    );
+    await service.sync(
+      {
+        ...input,
+        externalProductId: 'crawler-1',
+        price: 12000,
+        fetchedAt: observed,
+      },
+      source,
+    );
+    expect(
+      await prisma.productOffer.count({
+        where: { productUrl: input.productUrl },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.productPriceHistory.count({
+        where: { offerId: rows[0].id },
+      }),
+    ).toBe(1);
+    await service.sync(input, source); // Older observation must not erase the current price.
+    expect(
+      await prisma.productOffer.findUnique({ where: { id: rows[0].id } }),
+    ).toMatchObject({
+      price: 12000,
+      originalPrice: 15000,
+      externalProductId: 'crawler-1',
+    });
+    await service.sync(
+      {
+        ...input,
+        externalProductId: 'crawler-1',
+        productUrl: 'https://shop.test/products/new-url',
+        price: 12000,
+        fetchedAt: observed,
+      },
+      source,
+    );
+    expect(
+      await prisma.productOffer.findUnique({ where: { id: rows[0].id } }),
+    ).toMatchObject({ productUrl: 'https://shop.test/products/new-url' });
+  });
+
+  it('refuses to merge two existing offers when their URL and external ID disagree', async () => {
+    const first = {
+      name: 'Conflict A',
+      productUrl: 'https://shop.test/products/conflict-a',
+      externalProductId: 'conflict-a',
+      price: 1000,
+    };
+    const second = {
+      ...first,
+      name: 'Conflict B',
+      productUrl: 'https://shop.test/products/conflict-b',
+      externalProductId: 'conflict-b',
+    };
+    await service.sync(first, source);
+    await service.sync(second, source);
+    await expect(
+      service.sync({ ...first, productUrl: second.productUrl }, source),
+    ).rejects.toThrow('Invalid collected product');
+    expect(
+      await prisma.productOffer.count({
+        where: { externalProductId: { in: ['conflict-a', 'conflict-b'] } },
+      }),
+    ).toBe(2);
   });
 
   it('rolls back an offer update if history persistence fails', async () => {

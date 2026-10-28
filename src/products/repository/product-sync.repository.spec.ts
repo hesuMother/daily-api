@@ -4,7 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { ProductSyncRepository } from './product-sync.repository';
 
 describe('ProductSyncRepository', () => {
-  const source = { slug: 'coupang', name: 'Coupang' };
+  const source = { slug: 'test-shop', name: 'Test Shop' };
   const product = {
     externalProductId: '42',
     name: 'Shirt',
@@ -71,7 +71,7 @@ describe('ProductSyncRepository', () => {
       isolationLevel: 'Serializable',
     });
     expect(tx.seller.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { slug: 'coupang' } }),
+      expect.objectContaining({ where: { slug: 'test-shop' } }),
     );
     expect(tx.product.create).toHaveBeenCalledWith(
       expect.objectContaining({

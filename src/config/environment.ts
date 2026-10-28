@@ -1,14 +1,10 @@
-import {
-  productSyncSettings,
-  type ProductSyncSettings,
-} from './product-sync.config';
-
 import { discordSettings, type DiscordSettings } from './discord.config';
+import { crawlerSettings, type CrawlerSettings } from './crawler.config';
 
 export interface AppSettings {
+  crawler: CrawlerSettings;
   discord: DiscordSettings;
   outfitUploadDir: string;
-  productSync: ProductSyncSettings;
   port: number;
   isProduction: boolean;
   trustProxy: false | string[];
@@ -154,13 +150,13 @@ export function validateEnvironment(raw: Record<string, unknown>): {
   }
   return {
     app: {
+      crawler: crawlerSettings(raw),
       discord: discordSettings(raw),
       outfitUploadDir:
         typeof raw.OUTFIT_UPLOAD_DIR === 'string' &&
         raw.OUTFIT_UPLOAD_DIR.trim()
           ? raw.OUTFIT_UPLOAD_DIR.trim()
           : '.data/outfits',
-      productSync: productSyncSettings(raw),
       port,
       isProduction,
       trustProxy: raw.USE_REVERSE_PROXY === 'true' ? proxies : false,

@@ -11,5 +11,6 @@ process.env.USE_REVERSE_PROXY = 'false';
 process.env.JWT_ACCESS_TTL_SECONDS = '900';
 process.env.JWT_REFRESH_TTL_SECONDS = '604800';
 process.env.REFRESH_COOKIE_SAME_SITE = 'lax';
-process.env.COUPANG_SYNC_ENABLED = 'false';
 process.env.DISCORD_NOTIFICATIONS_ENABLED = 'false';
+process.env.CRAWLER_ENABLED = 'false';
+process.env.CRAWLER_REFRESH_ENABLED = 'false';

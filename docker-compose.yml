@@ -1,4 +1,14 @@
 services:
+  lightpanda:
+    # Official nightly pinned to the image exercised by the smoke test.
+    image: ${LIGHTPANDA_IMAGE:-lightpanda/browser@sha256:2d29d32d5ae76771096e2e9ecf46d30947ea58f9966cd2235cf4526657a029d2}
+    restart: unless-stopped
+    command: ["/bin/lightpanda", "serve", "--host", "0.0.0.0", "--port", "9222", "--obey-robots", "--http-nav-delay", "1000", "--http-max-response-size", "10485760", "--log-level", "fatal"]
+    ports:
+      - "127.0.0.1:${LIGHTPANDA_PORT:-9222}:9222"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   postgres:
     image: postgres:18-alpine   # 2026-09 기준 최신 안정 버전 (19는 아직 베타)
     container_name: app_postgres

@@ -197,18 +197,32 @@ model Seller {
 }
 
 model ProductOffer {
-  id                String   @id @default(uuid()) @db.Uuid
-  productId         String   @map("product_id") @db.Uuid
-  sellerId          String   @map("seller_id") @db.Uuid
-  externalProductId String?  @map("external_product_id")
+  id                   String    @id @default(uuid()) @db.Uuid
+  productId            String    @map("product_id") @db.Uuid
+  sellerId             String    @map("seller_id") @db.Uuid
+  externalProductId    String?   @map("external_product_id")
   // 옵션이 없으면 실제 가격, 옵션이 있으면 대표가/최저가로 사용합니다.
-  price             Int
-  currency          String   @default("KRW") @db.VarChar(3)
-  purchaseUrl       String?  @map("purchase_url")
+  price                Int?
+  currency             String    @default("KRW") @db.VarChar(3)
+  purchaseUrl          String?   @map("purchase_url")
+  productUrl           String?   @map("product_url")
+  originalPrice        Int?      @map("original_price")
+  sourceName           String?   @map("source_name")
+  sourceBrand          String?   @map("source_brand")
+  sourceCategory       String?   @map("source_category")
+  modelNumber          String?   @map("model_number")
+  sku                  String?
+  imageUrl             String?   @map("image_url")
+  lastCrawledAt        DateTime? @map("last_crawled_at") @db.Timestamptz(6)
+  nextRefreshAt        DateTime? @map("next_refresh_at") @db.Timestamptz(6)
+  lastRefreshAttemptAt DateTime? @map("last_refresh_attempt_at") @db.Timestamptz(6)
+  lastRefreshError     String?   @map("last_refresh_error")
+  refreshLockToken     String?   @map("refresh_lock_token") @db.Uuid
+  refreshLockedUntil   DateTime? @map("refresh_locked_until") @db.Timestamptz(6)
   // 판매처에서 상품 전체가 판매 불가한 경우에만 true입니다.
-  isSoldOut         Boolean  @default(false) @map("is_sold_out")
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  isSoldOut            Boolean?  @default(false) @map("is_sold_out")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
   seller         Seller                @relation(fields: [sellerId], references: [id], onDelete: Restrict)
@@ -220,6 +234,10 @@ model ProductOffer {
   // PostgreSQL에서는 externalProductId가 NULL인 행이 여러 개 존재할 수 있습니다.
   // 이 제약은 외부 판매처 상품의 중복 수집 방지용입니다.
   @@unique([sellerId, externalProductId])
+  @@unique([sellerId, productUrl])
+  @@index([modelNumber])
+  @@index([sku])
+  @@index([nextRefreshAt, lastCrawledAt])
   @@index([productId])
   @@index([sellerId])
   @@index([price])

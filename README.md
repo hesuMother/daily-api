@@ -32,6 +32,8 @@
 헬스 체크는 `GET /health`(생존), `GET /health/ready`(PostgreSQL·Redis 준비 상태)입니다.
 운영 검토 결과와 배포 전 남은 조건은 [운영 리뷰](docs/production-review.md), 상품 동기화는 [상품 수집 문서](docs/product-sync.md)를 참고하세요.
 
+Crawlee + Lightpanda 실행, 관리자 상품 수집 API, 테스트 및 새 쇼핑몰 추가 방법은 [크롤러 문서](docs/crawler.md)에 정리했습니다.
+
 Prisma 클라이언트는 `npm run prisma:generate`로 생성합니다. DB 적용 전에는 현재 스키마와 마이그레이션 이력을 대조하세요. 현재 알려진 차이는 운영 리뷰에 기록했습니다.
 
 ```bash

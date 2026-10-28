@@ -78,7 +78,6 @@ export async function createTestDatabase(
         DATABASE_URL: url.toString(),
         REDIS_URL: environment.getOrThrow<string>('REDIS_URL'),
         REDIS_KEY_PREFIX: redisPrefix,
-        COUPANG_SYNC_ENABLED: 'false',
         JWT_ACCESS_SECRET: environment.getOrThrow<string>('JWT_ACCESS_SECRET'),
         JWT_REFRESH_SECRET:
           environment.getOrThrow<string>('JWT_REFRESH_SECRET'),
